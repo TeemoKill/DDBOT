@@ -66,6 +66,7 @@ const (
 	WaifuCommand      = "老婆"
 	DivinationCommand = "占卜"
 	FightCommand      = "打人"
+	ChatCommand       = "聊天"
 	ChatCommandChn    = "，"
 	ChatCommandEng    = ","
 )
@@ -94,7 +95,7 @@ var allGroupCommand = [...]string{
 	ListCommand, SetuCommand, HuangtuCommand,
 	EnableCommand, DisableCommand,
 	ReverseCommand, ConfigCommand,
-	WaifuCommand, DivinationCommand, FightCommand,
+	WaifuCommand, DivinationCommand, FightCommand, ChatCommand,
 	HelpCommand, ScoreCommand, AdminCommand,
 	SilenceCommand, NoUpdateCommand, CleanConcern,
 }
