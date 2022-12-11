@@ -21,6 +21,7 @@ require (
 	github.com/huandu/xstrings v1.4.0
 	github.com/imdario/mergo v0.3.14
 	github.com/json-iterator/go v1.1.12
+	github.com/leesper/go_rng v0.0.0-20190531154944-a612b043e353
 	github.com/lestrrat-go/file-rotatelogs v2.4.0+incompatible
 	github.com/mitchellh/copystructure v1.2.0
 	github.com/modern-go/gls v0.0.0-20220109145502-612d0167dce5

@@ -2,9 +2,6 @@ package utils
 
 import (
 	"fmt"
-	"github.com/guonaihong/gout"
-	jsoniter "github.com/json-iterator/go"
-	"github.com/sirupsen/logrus"
 	"io/fs"
 	"net/url"
 	"path/filepath"
@@ -14,9 +11,16 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/guonaihong/gout"
+	jsoniter "github.com/json-iterator/go"
+	rng "github.com/leesper/go_rng"
+	"github.com/sirupsen/logrus"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
+
+var ExponentialRNG = rng.NewExpGenerator(time.Now().UnixNano())
 
 func FilePathWalkDir(root string) ([]string, error) {
 	var files []string
@@ -234,4 +238,8 @@ var reHtmlTag = regexp.MustCompile(`<[^>]+>`)
 
 func RemoveHtmlTag(s string) string {
 	return reHtmlTag.ReplaceAllString(s, "")
+}
+
+func Exp(lambda float64) float64 {
+	return ExponentialRNG.Exp(lambda)
 }

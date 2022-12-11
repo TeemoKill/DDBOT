@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/Sora233/DDBOT/requests"
+	"math"
 	"math/rand"
 	"os"
 	"runtime/debug"
@@ -181,7 +182,9 @@ func (lgc *LspGroupCommand) Execute() {
 		switch {
 		case strings.HasPrefix(lgc.CommandName(), ChatCommandChn) ||
 			strings.HasPrefix(lgc.CommandName(), ChatCommandEng):
-			lgc.ChatCommand()
+			if lgc.requireNotDisable(ChatCommand) {
+				lgc.ChatCommand()
+			}
 		default:
 			if CheckCustomGroupCommand(lgc.CommandName()) {
 				if lgc.requireNotDisable(lgc.CommandName()) {
@@ -541,35 +544,60 @@ func (lgc *LspGroupCommand) CheckinCommand() {
 		return
 	}
 
-	date := time.Now().Format("20060102")
+	today := time.Now()
+	yesterday := today.Add(-time.Hour * 24)
 
 	var score int64
 	var success bool
+	var continuousCheckinDays int64
+	var continuousCheckinBonus int64
+	var dailyLucky int64
 	err := localdb.RWCover(func() error {
 		var err error
 		scoreKey := localdb.Key("Score", lgc.groupCode(), lgc.uin())
-		dateMarker := localdb.Key("ScoreDate", lgc.groupCode(), lgc.uin(), date)
+		todayMarker := localdb.Key("ScoreDate", lgc.groupCode(), lgc.uin(), today.Format("20060102"))
+		yesterdayMarker := localdb.Key("ScoreDate", lgc.groupCode(), lgc.uin(), yesterday.Format("20060102"))
 
 		score, err = localdb.GetInt64(scoreKey, localdb.IgnoreNotFoundOpt())
 		if err != nil {
 			return err
 		}
-		if localdb.Exist(dateMarker) {
+
+		// if checked-in today already, return
+		if localdb.Exist(todayMarker) {
 			log = log.WithField("current_score", score)
 			success = false
 			return nil
 		}
 
-		score, err = localdb.SeqNext(scoreKey)
+		// gain continuous checkin days
+		continuousCheckinDays, err = localdb.GetInt64(yesterdayMarker, localdb.IgnoreNotFoundOpt())
+		if err != nil {
+			return err
+		}
+		continuousCheckinDays++
+		// if today is the first continuous checkin day, bonus = 0
+		continuousCheckinBonus = int64(math.Ilogb(float64(continuousCheckinDays)))
+
+		// exponential distribution rounded to integer. λ = 1 so the expectation is 1/λ = 1,
+		// while the overall distribution has a long tail to have a chance to gain high bonus.
+		dailyLucky = int64(-math.Ilogb(1 - rand.Float64()))
+		// dailyLucky = int64(math.Ceil(utils.Exp(1)))
+
+		score, err = localdb.IncInt64(scoreKey, continuousCheckinBonus+dailyLucky)
 		if err != nil {
 			return err
 		}
 
-		err = localdb.Set(dateMarker, "", localdb.SetExpireOpt(time.Hour*24*3))
+		err = localdb.SetInt64(todayMarker, continuousCheckinDays, localdb.SetExpireOpt(time.Hour*24*3))
 		if err != nil {
 			return err
 		}
-		log = log.WithField("new_score", score)
+		log = log.
+			WithField("continuousCheckinDays", continuousCheckinDays).
+			WithField("continuousCheckinBonus", continuousCheckinBonus).
+			WithField("dailyLucky", dailyLucky).
+			WithField("new_score", score)
 		success = true
 		return nil
 	})
@@ -578,10 +606,16 @@ func (lgc *LspGroupCommand) CheckinCommand() {
 		log.Errorf("checkin error %v", err)
 		return
 	}
-	lgc.sendChain(lgc.templateMsg("command.group.checkin.tmpl", map[string]interface{}{
-		"score":   score,
-		"success": success,
-	}))
+	lgc.sendChain(lgc.templateMsg(
+		"command.group.checkin.tmpl",
+		map[string]interface{}{
+			"continuous_checkin_days":  continuousCheckinDays,
+			"continuous_checkin_bonus": continuousCheckinBonus,
+			"daily_lucky":              dailyLucky,
+			"score":                    score,
+			"success":                  success,
+		},
+	))
 }
 
 func (lgc *LspGroupCommand) ScoreCommand() {
