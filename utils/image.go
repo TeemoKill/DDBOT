@@ -118,7 +118,7 @@ func ImageFormat(origImage []byte) (string, error) {
 	return format, err
 }
 
-func ImageReserve(imgBytes []byte) ([]byte, error) {
+func ImageReverse(imgBytes []byte) ([]byte, error) {
 	st := time.Now()
 	defer func() {
 		ed := time.Now()

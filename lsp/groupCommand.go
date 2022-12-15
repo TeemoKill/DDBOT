@@ -1,12 +1,9 @@
 package lsp
 
 import (
-	"bytes"
 	"fmt"
-	"github.com/Sora233/DDBOT/requests"
 	"math"
 	"math/rand"
-	"os"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -15,8 +12,6 @@ import (
 
 	"go.uber.org/atomic"
 
-	mirai_client "github.com/Mrs4s/MiraiGo/client"
-	"github.com/Mrs4s/MiraiGo/message"
 	"github.com/Sora233/DDBOT/image_pool"
 	"github.com/Sora233/DDBOT/image_pool/lolicon_pool"
 	localdb "github.com/Sora233/DDBOT/lsp/buntdb"
@@ -26,6 +21,8 @@ import (
 	"github.com/Sora233/DDBOT/lsp/permission"
 	"github.com/Sora233/DDBOT/lsp/template"
 	"github.com/Sora233/DDBOT/utils"
+
+	"github.com/Mrs4s/MiraiGo/message"
 	"github.com/Sora233/MiraiGo-Template/config"
 	"github.com/Sora233/sliceutil"
 	"github.com/alecthomas/kong"
@@ -875,7 +872,7 @@ func (lgc *LspGroupCommand) ReverseCommand() {
 		if e.Type() == message.Image {
 			switch ie := e.(type) {
 			case *message.GroupImageElement:
-				lgc.reserveGif(ie.Url)
+				lgc.reverseGif(ie.Url)
 				return
 			default:
 				log.Errorf("cast to ImageElement failed")
@@ -886,7 +883,7 @@ func (lgc *LspGroupCommand) ReverseCommand() {
 			if re, ok := e.(*message.ReplyElement); ok {
 				urls := lgc.l.LspStateManager.GetMessageImageUrl(lgc.groupCode(), re.ReplySeq)
 				if len(urls) >= 1 {
-					lgc.reserveGif(urls[0])
+					lgc.reverseGif(urls[0])
 					return
 				}
 			} else {
@@ -937,411 +934,6 @@ func (lgc *LspGroupCommand) CleanConcernCommand() {
 
 }
 
-func (lgc *LspGroupCommand) WaifuCommand() {
-	log := lgc.DefaultLoggerWithCommand(lgc.CommandName())
-	log.Infof("run %v command", lgc.CommandName())
-	defer func() { log.Infof("%v command end", lgc.CommandName()) }()
-
-	_, output := lgc.parseCommandSyntax(&struct{}{}, lgc.CommandName(), kong.Description("/今日老婆 抽取今天的老婆！"))
-	if output != "" {
-		lgc.textReply(output)
-	}
-	if lgc.exit {
-		return
-	}
-
-	date := time.Now().Format("20060102")
-	waifuKey := localdb.Key("Waifu", lgc.groupCode(), lgc.uin(), date)
-	log.Infof("waifuKey: %s", waifuKey)
-	var waifuInfo *mirai_client.GroupMemberInfo
-	var waifuExist bool
-	// pre-check daily waifu existence
-	err := localdb.RCover(func() error {
-		var lErr error
-
-		// check database if the user had a waifu in the group today already
-		lErr = localdb.GetJson(waifuKey, &waifuInfo, localdb.IgnoreNotFoundOpt())
-		if lErr != nil {
-			return lErr
-		}
-		if localdb.Exist(waifuKey) {
-			waifuExist = true
-		}
-		return nil
-	})
-	if err != nil {
-		lgc.textSend("贴贴老婆失败 - 内部错误")
-		log.Errorf("daily waifu precheck error: %v", err)
-		return
-	}
-
-	if waifuExist {
-		// if waifu exists, log the old waifu and reply
-		log = log.WithField("old_waifu_uin", waifuInfo.Uin).
-			WithField("old_waifu_nickname", waifuInfo.Nickname).
-			WithField("old_waifu_cardname", waifuInfo.CardName)
-		log.Infof("old waifu found")
-		var waifu_displayname string
-		if waifuInfo.CardName != "" {
-			waifu_displayname = waifuInfo.CardName
-		} else {
-			waifu_displayname = waifuInfo.Nickname
-		}
-		lgc.reply(
-			lgc.templateMsg(
-				"command.group.waifu.tmpl",
-				map[string]interface{}{
-					"waifu_exist":       waifuExist,
-					"waifu_uin":         waifuInfo.Uin,
-					"waifu_displayname": waifu_displayname,
-					// "waifu_icon_url": fmt.Sprintf("http://q2.qlogo.cn/headimg_dl?dst_uin=%d&spec=100", waifuInfo.Uin),
-				},
-			),
-		)
-		return
-	}
-
-	// no waifu yet today
-	// get group member list from the group message
-	groupInfo, err := (*lgc.bot.Bot).GetGroupInfo(lgc.msg.GroupCode)
-	if err != nil {
-		lgc.textSend("贴贴老婆失败 - 内部错误")
-		log.Errorf("waifu GetGroupInfo error: %v", err)
-		return
-	}
-	groupMembers, err := (*lgc.bot.Bot).GetGroupMembers(groupInfo)
-	if err != nil {
-		lgc.textSend("贴贴老婆失败 - 内部错误")
-		log.Errorf("waifu GetGroupMembers error: %v", err)
-		return
-	}
-
-	// get a random user from group member list
-	waifuInfo = groupMembers[rand.Intn(len(groupMembers))]
-	// Fixme: this is a temporary fix to avoid infinite pointer loop during json Marshal
-	//		should use a dedicated structure to store waifu info rather than storing the original GroupMemberInfo
-	waifuInfo.Group = nil
-
-	log = log.WithField("new_waifu_uin", waifuInfo.Uin).
-		WithField("new_waifu_nickname", waifuInfo.Nickname).
-		WithField("new_waifu_cardname", waifuInfo.CardName)
-	log.Infof("new waifu rolled!")
-
-	// record daily waifu of the user in this group in database
-	err = localdb.RWCover(func() error {
-		var lErr error
-
-		if localdb.Exist(waifuKey) {
-			waifuExist = true
-			// another goroutine selected a waifu between the waifu selection
-			lErr = localdb.GetJson(waifuKey, &waifuInfo, localdb.IgnoreNotFoundOpt())
-			if lErr != nil {
-				return lErr
-			}
-			// if waifu exists, log waifu and return
-			log = log.WithField("old_waifu_uin", waifuInfo.Uin).
-				WithField("old_waifu_nickname", waifuInfo.Nickname).
-				WithField("old_waifu_cardname", waifuInfo.CardName)
-			log.Infof("old waifu found After rolled new waifu")
-			return nil
-		}
-
-		lErr = localdb.SetJson(
-			waifuKey,
-			waifuInfo,
-			localdb.SetExpireOpt(time.Hour*24*3),
-		)
-		if lErr != nil {
-			return lErr
-		}
-		return nil
-	})
-	if err != nil {
-		lgc.textSend("贴贴老婆失败 - 内部错误")
-		log.Errorf("waifu insert new daily waifu error: %v", err)
-		return
-	}
-	// reply the waifu to group
-	var waifu_displayname string
-	if waifuInfo.CardName != "" {
-		waifu_displayname = waifuInfo.CardName
-	} else {
-		waifu_displayname = waifuInfo.Nickname
-	}
-	lgc.reply(
-		lgc.templateMsg(
-			"command.group.waifu.tmpl",
-			map[string]interface{}{
-				"waifu_exist":       waifuExist,
-				"waifu_uin":         waifuInfo.Uin,
-				"waifu_displayname": waifu_displayname,
-				// "waifu_icon_url": fmt.Sprintf("http://q2.qlogo.cn/headimg_dl?dst_uin=%d&spec=100", waifuInfo.Uin),
-			},
-		),
-	)
-	return
-}
-
-func (lgc *LspGroupCommand) DivinationCommand() {
-	log := lgc.DefaultLoggerWithCommand(lgc.CommandName())
-	log.Infof("run %v command", lgc.CommandName())
-	defer func() { log.Infof("%v command end", lgc.CommandName()) }()
-
-	_, output := lgc.parseCommandSyntax(&struct{}{}, lgc.CommandName(), kong.Description("/占卜 赛博算命"))
-	if output != "" {
-		lgc.textReply(output)
-	}
-	if lgc.exit {
-		return
-	}
-
-	date := time.Now().Format("20060102")
-	var divineKey = localdb.Key("Divination", lgc.uin(), date)
-	var divinationSN int64
-	var divinationExist = false
-	err := localdb.RWCover(func() error {
-		var lErr error
-		divinationSN, lErr = localdb.GetInt64(divineKey, localdb.IgnoreNotFoundOpt())
-		if lErr != nil {
-			return lErr
-		}
-		if localdb.Exist(divineKey) {
-			divinationExist = true
-			return lErr
-		}
-
-		divinationSN = int64(rand.Intn(len(utils.Divinations)))
-		lErr = localdb.SetInt64(divineKey, divinationSN, localdb.SetExpireOpt(time.Hour*24*3))
-		if lErr != nil {
-			return lErr
-		}
-		return nil
-	})
-	if err != nil {
-		lgc.textSend("占卜失败 - 内部错误")
-		log.Errorf("divination error: %v", err)
-		return
-	}
-
-	divination := utils.Divinations[divinationSN]
-
-	divInscription, err := os.ReadFile(divination.InscriptionPath)
-	if err != nil {
-		lgc.textSend("占卜失败 - 内部错误")
-		log.Errorf("divination open inscription file error: %v", err)
-		return
-	}
-	inscription := string(divInscription)
-
-	// reply the divination to group
-	lgc.reply(
-		lgc.templateMsg(
-			"command.group.divination.tmpl",
-			map[string]interface{}{
-				"divination_exist": divinationExist,
-				"divination_title": divination.Title,
-				"divination_image": divination.ImagePath,
-				"inscription":      inscription,
-			},
-		),
-	)
-
-	return
-}
-
-func (lgc *LspGroupCommand) FightCommand() {
-	log := lgc.DefaultLoggerWithCommand(lgc.CommandName())
-	log.Infof("run %v command", lgc.CommandName())
-	defer func() { log.Infof("%v command end", lgc.CommandName()) }()
-
-	_, output := lgc.parseCommandSyntax(
-		&struct{}{}, lgc.CommandName(),
-		kong.Description("at 一位群友打ta，或者留空随机打一位无辜群友"),
-	)
-	if output != "" {
-		lgc.textReply(output)
-	}
-	if lgc.exit {
-		return
-	}
-
-	var err error
-
-	// find if the message at someone
-	var atList []*message.AtElement
-	for _, e := range lgc.msg.Elements {
-		if e.Type() == message.At {
-			switch ae := e.(type) {
-			case *message.AtElement:
-				atList = append(atList, ae)
-			default:
-				log.Errorf("cast message element to AtElement failed")
-				lgc.textReply("打人失败 - 内部错误 可能是网线过不去")
-				return
-			}
-		}
-	}
-
-	var victimInfo *mirai_client.GroupMemberInfo
-
-	var msg *mmsg.MSG
-	if len(atList) != 0 {
-		msg = mmsg.NewMSG()
-		for _, ae := range atList {
-			log.WithField("target", ae.Target).
-				WithField("display", ae.Display).
-				WithField("subtype", ae.SubType).
-				Infof("atElement exists")
-
-			victimInfo, err = (*lgc.bot.Bot).GetMemberInfo(lgc.msg.GroupCode, ae.Target)
-			if err != nil {
-				lgc.textSend("打人失败 - 内部错误")
-				log.Errorf("fight GetMemberInfo error: %v", err)
-				return
-			}
-
-			var victimDisplayName string
-			if victimInfo.CardName != "" {
-				victimDisplayName = victimInfo.CardName
-			} else {
-				victimDisplayName = victimInfo.Nickname
-			}
-
-			victimMsg := lgc.templateMsg(
-				"command.group.fight.tmpl",
-				map[string]interface{}{
-					"victim_uin":         victimInfo.Uin,
-					"victim_displayname": victimDisplayName,
-				},
-			)
-			msg.Append(victimMsg.Elements()...)
-		}
-	} else {
-		// did not at, randomly pick a victim
-		var groupInfo *mirai_client.GroupInfo
-		groupInfo, err = (*lgc.bot.Bot).GetGroupInfo(lgc.msg.GroupCode)
-		if err != nil {
-			lgc.textSend("打人失败 - 内部错误")
-			log.Errorf("fight GetGroupInfo error: %v", err)
-			return
-		}
-		var groupMembers []*mirai_client.GroupMemberInfo
-		groupMembers, err = (*lgc.bot.Bot).GetGroupMembers(groupInfo)
-		if err != nil {
-			lgc.textSend("打人失败 - 内部错误")
-			log.Errorf("fight GetGroupMembers error: %v", err)
-			return
-		}
-
-		victimInfo = groupMembers[rand.Intn(len(groupMembers))]
-
-		var victimDisplayName string
-		if victimInfo.CardName != "" {
-			victimDisplayName = victimInfo.CardName
-		} else {
-			victimDisplayName = victimInfo.Nickname
-		}
-
-		msg = lgc.templateMsg(
-			"command.group.fight.tmpl",
-			map[string]interface{}{
-				"victim_uin":         victimInfo.Uin,
-				"victim_displayname": victimDisplayName,
-			},
-		)
-	}
-
-	lgc.reply(msg)
-	return
-}
-
-type ChatGPTResp struct {
-	Id      string `json:"id"`
-	Object  string `json:"object"`
-	Created int    `json:"created"`
-	Model   string `json:"model"`
-	Choices []struct {
-		Text         string      `json:"text"`
-		Index        int         `json:"index"`
-		Logprobs     interface{} `json:"logprobs"`
-		FinishReason string      `json:"finish_reason"`
-	} `json:"choices"`
-	Usage struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage"`
-}
-
-func (lgc *LspGroupCommand) ChatCommand() {
-	log := lgc.DefaultLoggerWithCommand("ChatCommand")
-	log.Infof("run %v command", "ChatCommand")
-	defer func() { log.Infof("%v command end", "ChatCommand") }()
-
-	var err error
-
-	// retrieve the entire input, including the command text
-	firstWord := lgc.CommandName()
-	if strings.HasPrefix(firstWord, "，") {
-		firstWord = strings.TrimPrefix(firstWord, "，")
-	} else if strings.HasPrefix(firstWord, ",") {
-		firstWord = strings.TrimPrefix(firstWord, ",")
-	}
-	chatContent := []string{firstWord}
-	chatContent = append(chatContent, lgc.Args...)
-	chatPrompt := fmt.Sprintf(
-		"%s%s",
-		strings.Join(chatContent, " "),
-		"<|endoftext|>",
-	)
-	log.WithField("chatPrompt", chatPrompt).Infof("chat command prompt")
-
-	// call chatgpt api and receive entire reply
-	apiAddr := config.GlobalConfig.GetString("chatGPT.apiAddr")
-	apiKey := config.GlobalConfig.GetString("chatGPT.apiKey")
-
-	opts := []requests.Option{
-		requests.HeaderOption("Content-Type", "application/json"),
-		requests.HeaderOption("Authorization", fmt.Sprintf("Bearer %s", apiKey)),
-		requests.TimeoutOption(time.Second * 15),
-		requests.RetryOption(3),
-	}
-	params := map[string]interface{}{
-		"model":       "text-davinci-003",
-		"prompt":      chatPrompt,
-		"temperature": 1,
-		"max_tokens":  800,
-	}
-
-	var body = new(bytes.Buffer)
-
-	err = requests.PostJson(apiAddr, params, body, opts...)
-	if err != nil {
-		lgc.textSend("陷入了混乱")
-		log.WithField("error", err).Errorf("chat call gpt api error")
-		return
-	}
-
-	resp := &ChatGPTResp{}
-
-	err = json.Unmarshal(body.Bytes(), resp)
-	if err != nil {
-		lgc.textSend("陷入了迷茫")
-		log.WithField("error", err).Errorf("chat unmarshal gpt api response error")
-		return
-	}
-
-	gptReply := resp.Choices[0].Text
-	for strings.HasPrefix(gptReply, "\n") {
-		gptReply = strings.TrimPrefix(gptReply, "\n")
-	}
-	log.WithField("gptReply", gptReply).Infof("gpt reply")
-
-	// reply to group
-	lgc.textReply(gptReply)
-
-}
-
 func (lgc *LspGroupCommand) DefaultLogger() *logrus.Entry {
 	return logger.WithField("Name", lgc.displayName()).
 		WithField("Uin", lgc.uin()).
@@ -1352,18 +944,18 @@ func (lgc *LspGroupCommand) DefaultLoggerWithCommand(command string) *logrus.Ent
 	return lgc.DefaultLogger().WithField("Command", command)
 }
 
-func (lgc *LspGroupCommand) reserveGif(url string) {
+func (lgc *LspGroupCommand) reverseGif(url string) {
 	log := lgc.DefaultLoggerWithCommand(lgc.CommandName())
-	log.WithField("reserve_url", url).Debug("reserve image")
+	log.WithField("reverse_url", url).Debug("reverse image")
 	img, err := utils.ImageGet(url)
 	if err != nil {
 		log.Errorf("get image err %v", err)
 		lgc.textReply("获取图片失败")
 		return
 	}
-	img, err = utils.ImageReserve(img)
+	img, err = utils.ImageReverse(img)
 	if err != nil {
-		log.Errorf("reserve image err %v", err)
+		log.Errorf("reverse image err %v", err)
 		lgc.textReply(fmt.Sprintf("失败 - %v", err))
 		return
 	}
