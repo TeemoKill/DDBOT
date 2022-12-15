@@ -1289,7 +1289,11 @@ func (lgc *LspGroupCommand) ChatCommand() {
 	}
 	chatContent := []string{firstWord}
 	chatContent = append(chatContent, lgc.Args...)
-	chatPrompt := strings.Join(chatContent, " ")
+	chatPrompt := fmt.Sprintf(
+		"%s%s",
+		strings.Join(chatContent, " "),
+		"<|endoftext|>",
+	)
 	log.WithField("chatPrompt", chatPrompt).Infof("chat command prompt")
 
 	// call chatgpt api and receive entire reply
@@ -1305,8 +1309,8 @@ func (lgc *LspGroupCommand) ChatCommand() {
 	params := map[string]interface{}{
 		"model":       "text-davinci-003",
 		"prompt":      chatPrompt,
-		"temperature": 0.7,
-		"max_tokens":  500,
+		"temperature": 1,
+		"max_tokens":  800,
 	}
 
 	var body = new(bytes.Buffer)
