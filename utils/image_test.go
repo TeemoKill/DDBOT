@@ -57,7 +57,7 @@ func TestImageGet(t *testing.T) {
 	assert.Nil(t, err)
 	assert.EqualValues(t, "jpeg", format)
 
-	_, err = ImageReserve(b)
+	_, err = ImageReverse(b)
 	assert.NotNil(t, err)
 
 	img, _, err := image.Decode(bytes.NewReader(b))
