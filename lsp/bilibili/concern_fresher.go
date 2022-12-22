@@ -117,6 +117,7 @@ func (c *Concern) fresh() concern.FreshFunc {
 							liveRoom.GetTitle(),
 							liveRoom.GetCover(),
 							liveRoom.GetLiveStatus(),
+							time.Now().Unix(),
 						)
 						if selfLiveInfo.Living() {
 							liveInfoMap[selfUid] = selfLiveInfo
@@ -134,6 +135,12 @@ func (c *Concern) fresh() concern.FreshFunc {
 					if oldInfo.Status == LiveStatus_NoLiving {
 						if newInfo, found := liveInfoMap[mid]; found {
 							// notliving -> living
+							if time.Duration(newInfo.TimeStamp-oldInfo.TimeStamp) < time.Minute {
+								// to avoid bilibili live status api unstable issue
+								// we assume a live can only re-open after closed for at least 1 minute
+								continue
+							}
+
 							newInfo.liveStatusChanged = true
 							sendLiveInfo(newInfo)
 						}
@@ -165,8 +172,13 @@ func (c *Concern) fresh() concern.FreshFunc {
 								logger.WithField("uid", mid).WithField("name", oldInfo.UserInfo.Name).
 									Debug("XSpaceAccInfo notlive confirmed")
 							}
-							newInfo = NewLiveInfo(&oldInfo.UserInfo, resp.GetData().GetLiveRoom().GetTitle(),
-								resp.GetData().GetLiveRoom().GetCover(), LiveStatus_NoLiving)
+							newInfo = NewLiveInfo(
+								&oldInfo.UserInfo,
+								resp.GetData().GetLiveRoom().GetTitle(),
+								resp.GetData().GetLiveRoom().GetCover(),
+								LiveStatus_NoLiving,
+								time.Now().Unix(),
+							)
 							newInfo.Name = resp.GetData().GetName()
 							newInfo.liveStatusChanged = true
 							sendLiveInfo(newInfo)
@@ -337,6 +349,7 @@ func (c *Concern) freshLive() ([]*LiveInfo, error) {
 				l.GetTitle(),
 				l.GetPic(),
 				LiveStatus_Living,
+				time.Now().Unix(),
 			)
 			if info.Cover == "" {
 				info.Cover = l.GetCover()
