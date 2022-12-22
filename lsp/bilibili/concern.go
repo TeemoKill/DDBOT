@@ -337,6 +337,7 @@ func (c *Concern) FindUser(mid int64, load bool) (*UserInfo, error) {
 			resp.GetData().GetLiveRoom().GetTitle(),
 			resp.GetData().GetLiveRoom().GetCover(),
 			resp.GetData().GetLiveRoom().GetLiveStatus(),
+			time.Now().Unix(),
 		)
 		// AddLiveInfo 会顺便添加UserInfo
 		err = c.StateManager.AddLiveInfo(newLiveInfo)
