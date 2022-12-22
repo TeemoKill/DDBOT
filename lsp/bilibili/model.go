@@ -95,6 +95,7 @@ type LiveInfo struct {
 	Status    LiveStatus `json:"status"`
 	LiveTitle string     `json:"live_title"`
 	Cover     string     `json:"cover"`
+	TimeStamp int64      `json:"time_stamp"`
 
 	once              sync.Once
 	msgCache          *mmsg.MSG
@@ -188,7 +189,7 @@ func NewUserInfo(mid, roomId int64, name, url string) *UserInfo {
 	}
 }
 
-func NewLiveInfo(userInfo *UserInfo, liveTitle string, cover string, status LiveStatus) *LiveInfo {
+func NewLiveInfo(userInfo *UserInfo, liveTitle string, cover string, status LiveStatus, timeStamp int64) *LiveInfo {
 	if userInfo == nil {
 		return nil
 	}
@@ -197,6 +198,7 @@ func NewLiveInfo(userInfo *UserInfo, liveTitle string, cover string, status Live
 		Status:    status,
 		LiveTitle: liveTitle,
 		Cover:     cover,
+		TimeStamp: timeStamp,
 	}
 }
 
