@@ -88,6 +88,11 @@ func (c *Concern) fresh() concern.FreshFunc {
 				}
 
 				sendLiveInfo := func(info *LiveInfo) {
+					logger.WithField("status", info.Status).
+						WithField("live_title", info.LiveTitle).
+						WithField("user_id", info.Mid).
+						WithField("user_name", info.Name).
+						Debug("sendLiveInfo")
 					addLiveInfoErr := c.AddLiveInfo(info)
 					if addLiveInfoErr != nil {
 						// 如果因为系统原因add失败，会造成重复推送
