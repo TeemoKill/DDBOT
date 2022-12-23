@@ -140,7 +140,7 @@ func (c *Concern) fresh() concern.FreshFunc {
 					if oldInfo.Status == LiveStatus_NoLiving {
 						if newInfo, found := liveInfoMap[mid]; found {
 							// notliving -> living
-							if time.Duration(newInfo.TimeStamp-oldInfo.TimeStamp) < time.Minute {
+							if time.Unix(newInfo.TimeStamp, 0).Sub(time.Unix(oldInfo.TimeStamp, 0)) < time.Minute {
 								// to avoid bilibili live status api unstable issue
 								// we assume a live can only re-open after closed for at least 1 minute
 								continue
