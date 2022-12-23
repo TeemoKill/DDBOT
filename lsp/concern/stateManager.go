@@ -637,11 +637,11 @@ func (c *StateManager) DefaultDispatch() DispatchFunc {
 				go func(notifies []Notify) {
 					cnt := c.largeNotifyCount.Inc()
 					ticker := time.NewTicker(time.Second*1 + time.Second*time.Duration(2*cnt))
+					defer ticker.Stop()
 					for _, n := range notifies {
 						<-ticker.C
 						notifyChan <- n
 					}
-					ticker.Stop()
 					c.largeNotifyCount.Dec()
 				}(notifies)
 			} else {
@@ -698,7 +698,7 @@ func NewStateManagerWithCustomKey(name string, keySet KeySet, notifyChan chan<- 
 	sm := &StateManager{
 		name:       name,
 		notifyChan: notifyChan,
-		eventChan:  make(chan Event, 4),
+		eventChan:  make(chan Event, 128),
 		KeySet:     keySet,
 		ctx:        ctx,
 		cancelCtx:  cancel,
