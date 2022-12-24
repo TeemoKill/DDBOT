@@ -53,7 +53,11 @@ func (lgc *LspGroupCommand) ChatCommand() {
 	)
 	log.WithField("chatPrompt", chatPrompt).Infof("chat command prompt")
 
-	gptReply, err := lgc.callChatGPT(chatPrompt)
+	// call chatgpt api and receive entire reply
+	apiAddr := config.GlobalConfig.GetString("chatGPT.apiAddr")
+	apiKey := config.GlobalConfig.GetString("chatGPT.apiKey")
+
+	gptReply, err := lgc.callChatGPT(apiAddr, apiKey, chatPrompt)
 	if err != nil {
 		log.WithError(err).
 			Errorf("call chatgpt error")
@@ -64,19 +68,15 @@ func (lgc *LspGroupCommand) ChatCommand() {
 	lgc.textReply(gptReply)
 }
 
-func (lgc *LspGroupCommand) callChatGPT(chatPrompt string) (reply string, err error) {
-	log := lgc.DefaultLoggerWithCommand("ChatCommand")
-	log.Infof("run %v command", "ChatCommand")
-
-	// call chatgpt api and receive entire reply
-	apiAddr := config.GlobalConfig.GetString("chatGPT.apiAddr")
-	apiKey := config.GlobalConfig.GetString("chatGPT.apiKey")
+func (lgc *LspGroupCommand) callChatGPT(apiAddr string, apiKey string, chatPrompt string) (reply string, err error) {
+	log := lgc.DefaultLoggerWithCommand("callChatGPT")
+	log.Infof("run %v command", "callChatGPT")
 
 	opts := []requests.Option{
 		requests.HeaderOption("Content-Type", "application/json"),
 		requests.HeaderOption("Authorization", fmt.Sprintf("Bearer %s", apiKey)),
-		requests.TimeoutOption(time.Second * 15),
-		requests.RetryOption(3),
+		requests.TimeoutOption(time.Second * 20),
+		requests.RetryOption(5),
 	}
 	params := map[string]interface{}{
 		"model":       "text-davinci-003",
@@ -86,26 +86,7 @@ func (lgc *LspGroupCommand) callChatGPT(chatPrompt string) (reply string, err er
 	}
 
 	var body = new(bytes.Buffer)
-	retryLimit := 3
-	retryCount := 0
-	for {
-		if retryCount > retryLimit {
-			break
-		}
-
-		err = requests.PostJson(apiAddr, params, body, opts...)
-		if err != nil {
-			log.WithField("error", err).
-				WithField("retry_count", retryCount).
-				WithField("retry_limit", retryLimit).
-				Errorf("call chatgpt api error")
-			retryCount++
-			continue
-		}
-
-		break
-	}
-
+	err = requests.PostJson(apiAddr, params, body, opts...)
 	if err != nil {
 		lgc.textSend("陷入了混乱")
 		log.WithField("error", err).Errorf("call chatgpt api error")
