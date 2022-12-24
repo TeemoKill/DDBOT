@@ -53,6 +53,21 @@ func (lgc *LspGroupCommand) ChatCommand() {
 	)
 	log.WithField("chatPrompt", chatPrompt).Infof("chat command prompt")
 
+	gptReply, err := lgc.callChatGPT(chatPrompt)
+	if err != nil {
+		log.WithError(err).
+			Errorf("call chatgpt error")
+		return
+	}
+
+	// reply to group
+	lgc.textReply(gptReply)
+}
+
+func (lgc *LspGroupCommand) callChatGPT(chatPrompt string) (reply string, err error) {
+	log := lgc.DefaultLoggerWithCommand("ChatCommand")
+	log.Infof("run %v command", "ChatCommand")
+
 	// call chatgpt api and receive entire reply
 	apiAddr := config.GlobalConfig.GetString("chatGPT.apiAddr")
 	apiKey := config.GlobalConfig.GetString("chatGPT.apiKey")
@@ -71,16 +86,33 @@ func (lgc *LspGroupCommand) ChatCommand() {
 	}
 
 	var body = new(bytes.Buffer)
+	retryLimit := 3
+	retryCount := 0
+	for {
+		if retryCount > retryLimit {
+			break
+		}
 
-	err = requests.PostJson(apiAddr, params, body, opts...)
+		err = requests.PostJson(apiAddr, params, body, opts...)
+		if err != nil {
+			log.WithField("error", err).
+				WithField("retry_count", retryCount).
+				WithField("retry_limit", retryLimit).
+				Errorf("call chatgpt api error")
+			retryCount++
+			continue
+		}
+
+		break
+	}
+
 	if err != nil {
 		lgc.textSend("陷入了混乱")
-		log.WithField("error", err).Errorf("chat call gpt api error")
+		log.WithField("error", err).Errorf("call chatgpt api error")
 		return
 	}
 
 	resp := &ChatGPTResp{}
-
 	err = json.Unmarshal(body.Bytes(), resp)
 	if err != nil {
 		lgc.textSend("陷入了迷茫")
@@ -88,13 +120,11 @@ func (lgc *LspGroupCommand) ChatCommand() {
 		return
 	}
 
-	gptReply := resp.Choices[0].Text
-	for strings.HasPrefix(gptReply, "\n") {
-		gptReply = strings.TrimPrefix(gptReply, "\n")
+	reply = resp.Choices[0].Text
+	for strings.HasPrefix(reply, "\n") {
+		reply = strings.TrimPrefix(reply, "\n")
 	}
-	log.WithField("gptReply", gptReply).Infof("gpt reply")
+	log.WithField("reply", reply).Infof("gpt reply")
 
-	// reply to group
-	lgc.textReply(gptReply)
-
+	return reply, nil
 }
