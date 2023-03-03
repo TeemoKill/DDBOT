@@ -80,8 +80,11 @@ func (lgc *LspGroupCommand) callChatGPT(apiAddr string, apiKey string, chatPromp
 		"model": "gpt-3.5-turbo",
 		"messages": []map[string]string{
 			{
-				"role":    "system",
-				"content": fmt.Sprintf("current time: %s", time.Now().Format("2006-01-02 Mon (UTC+8)15:04:05")),
+				"role": "system",
+				"content": fmt.Sprintf("current time: %s ; %s",
+					time.Now().Format("2006-01-02 Mon (UTC+8)15:04:05"),
+					config.GlobalConfig.GetString("chatGPT.reminder"),
+				),
 			},
 			{"role": "user", "content": chatPrompt},
 		},
