@@ -17,10 +17,12 @@ type ChatGPTResp struct {
 	Created int    `json:"created"`
 	Model   string `json:"model"`
 	Choices []struct {
-		Text         string      `json:"text"`
-		Index        int         `json:"index"`
-		Logprobs     interface{} `json:"logprobs"`
-		FinishReason string      `json:"finish_reason"`
+		Index   int `json:"index"`
+		Message struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	Usage struct {
 		PromptTokens     int `json:"prompt_tokens"`
@@ -45,12 +47,8 @@ func (lgc *LspGroupCommand) ChatCommand() {
 	}
 	chatContent := []string{firstWord}
 	chatContent = append(chatContent, lgc.Args...)
-	chatPrompt := fmt.Sprintf(
-		"[current time: %s]%s%s",
-		time.Now().Format("2006-01-02 Mon (UTC+8)15:04:05"),
-		strings.Join(chatContent, " "),
-		"<|endoftext|>",
-	)
+	chatPrompt := strings.Join(chatContent, " ")
+
 	log.WithField("chatPrompt", chatPrompt).Infof("chat command prompt")
 
 	// call chatgpt api and receive entire reply
@@ -72,6 +70,20 @@ func (lgc *LspGroupCommand) callChatGPT(apiAddr string, apiKey string, chatPromp
 	log := lgc.DefaultLoggerWithCommand("callChatGPT")
 	log.Infof("run %v command", "callChatGPT")
 
+	// set defaults for config options
+	// model
+	if config.GlobalConfig.Get("chatGPT.model") == nil {
+		config.GlobalConfig.SetDefault("chatGPT.model", "gpt-3.5-turbo")
+	}
+	// temperature
+	if config.GlobalConfig.Get("chatGPT.temperature") == nil {
+		config.GlobalConfig.SetDefault("chatGPT.temperature", 1.0)
+	}
+	// max_tokens
+	if config.GlobalConfig.Get("chatGPT.maxTokens") == nil {
+		config.GlobalConfig.SetDefault("chatGPT.maxTokens", 1200)
+	}
+
 	opts := []requests.Option{
 		requests.HeaderOption("Content-Type", "application/json"),
 		requests.HeaderOption("Authorization", fmt.Sprintf("Bearer %s", apiKey)),
@@ -79,10 +91,19 @@ func (lgc *LspGroupCommand) callChatGPT(apiAddr string, apiKey string, chatPromp
 		requests.RetryOption(5),
 	}
 	params := map[string]interface{}{
-		"model":       "text-davinci-003",
-		"prompt":      chatPrompt,
-		"temperature": 1,
-		"max_tokens":  800,
+		"model": config.GlobalConfig.GetString("chatGPT.model"),
+		"messages": []map[string]string{
+			{
+				"role": "system",
+				"content": fmt.Sprintf("current time: %s ; %s",
+					time.Now().Format("2006-01-02 Mon (UTC+8)15:04:05"),
+					config.GlobalConfig.GetString("chatGPT.reminder"),
+				),
+			},
+			{"role": "user", "content": chatPrompt},
+		},
+		"temperature": config.GlobalConfig.GetFloat64("chatGPT.temperature"),
+		"max_tokens":  config.GlobalConfig.GetInt64("chatGPT.maxTokens"),
 	}
 
 	var body = new(bytes.Buffer)
@@ -101,7 +122,7 @@ func (lgc *LspGroupCommand) callChatGPT(apiAddr string, apiKey string, chatPromp
 		return
 	}
 
-	reply = resp.Choices[0].Text
+	reply = resp.Choices[0].Message.Content
 	for strings.HasPrefix(reply, "\n") {
 		reply = strings.TrimPrefix(reply, "\n")
 	}
