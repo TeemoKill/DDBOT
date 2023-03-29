@@ -4,6 +4,7 @@ import (
 	"github.com/Sora233/DDBOT/internal/test"
 	"github.com/stretchr/testify/assert"
 	"testing"
+	"time"
 )
 
 func TestModelNotify(t *testing.T) {
@@ -59,7 +60,7 @@ func TestNewConcernLiveNotify(t *testing.T) {
 	notify := NewConcernLiveNotify(test.G1, nil)
 	assert.Nil(t, notify)
 	origUserInfo := NewUserInfo(test.UID1, test.ROOMID1, test.NAME1, "")
-	origLiveInfo := NewLiveInfo(origUserInfo, "", "", LiveStatus_Living)
+	origLiveInfo := NewLiveInfo(origUserInfo, "", "", LiveStatus_Living, time.Now().Unix())
 	notify = NewConcernLiveNotify(test.G1, origLiveInfo)
 	assert.NotNil(t, notify)
 }

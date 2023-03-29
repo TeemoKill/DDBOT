@@ -77,7 +77,7 @@ func (lgc *LspGroupCommand) callChatGPT(apiAddr string, apiKey string, chatPromp
 		requests.RetryOption(5),
 	}
 	params := map[string]interface{}{
-		"model": "gpt-3.5-turbo",
+		"model": config.GlobalConfig.GetString("chatGPT.model"),
 		"messages": []map[string]string{
 			{
 				"role": "system",
