@@ -70,6 +70,20 @@ func (lgc *LspGroupCommand) callChatGPT(apiAddr string, apiKey string, chatPromp
 	log := lgc.DefaultLoggerWithCommand("callChatGPT")
 	log.Infof("run %v command", "callChatGPT")
 
+	// set defaults for config options
+	// model
+	if config.GlobalConfig.Get("chatGPT.model") == nil {
+		config.GlobalConfig.SetDefault("chatGPT.model", "gpt-3.5-turbo")
+	}
+	// temperature
+	if config.GlobalConfig.Get("chatGPT.temperature") == nil {
+		config.GlobalConfig.SetDefault("chatGPT.temperature", 1.0)
+	}
+	// max_tokens
+	if config.GlobalConfig.Get("chatGPT.maxTokens") == nil {
+		config.GlobalConfig.SetDefault("chatGPT.maxTokens", 1200)
+	}
+
 	opts := []requests.Option{
 		requests.HeaderOption("Content-Type", "application/json"),
 		requests.HeaderOption("Authorization", fmt.Sprintf("Bearer %s", apiKey)),
@@ -88,8 +102,8 @@ func (lgc *LspGroupCommand) callChatGPT(apiAddr string, apiKey string, chatPromp
 			},
 			{"role": "user", "content": chatPrompt},
 		},
-		"temperature": 1,
-		"max_tokens":  800,
+		"temperature": config.GlobalConfig.GetFloat64("chatGPT.temperature"),
+		"max_tokens":  config.GlobalConfig.GetInt64("chatGPT.maxTokens"),
 	}
 
 	var body = new(bytes.Buffer)
