@@ -786,20 +786,43 @@ func (l *Lsp) sendGroupMessage(groupCode int64, msg *message.SendingMessage, rec
 		logger.WithFields(localutils.GroupLogFields(groupCode)).Debug("send with empty message")
 		return &message.GroupMessage{Id: -1}
 	}
-	res = bot.Instance.SendGroupMessage(groupCode, msg)
-	if res == nil || res.Id == -1 {
-		if msg.Count(func(e message.IMessageElement) bool {
-			return e.Type() == message.At && e.(*message.AtElement).Target == 0
-		}) > 0 {
-			logger.WithField("content", msgstringer.MsgToString(msg.Elements)).
-				WithFields(localutils.GroupLogFields(groupCode)).
-				Errorf("发送群消息失败，可能是@全员次数用尽")
-		} else {
-			logger.WithField("content", msgstringer.MsgToString(msg.Elements)).
-				WithFields(localutils.GroupLogFields(groupCode)).
-				Errorf("发送群消息失败，可能是被禁言或者账号被风控")
+
+	sendGroupMessageRetry := func(
+		groupCode int64, msg *message.SendingMessage, retryLimit int,
+	) (resp *message.GroupMessage) {
+		var retry = 0
+		for {
+			resp = bot.Instance.SendGroupMessage(groupCode, msg)
+			if resp == nil || resp.Id == -1 {
+				if msg.Count(func(e message.IMessageElement) bool {
+					return e.Type() == message.At && e.(*message.AtElement).Target == 0
+				}) > 0 {
+					logger.WithField("content", msgstringer.MsgToString(msg.Elements)).
+						WithFields(localutils.GroupLogFields(groupCode)).
+						Errorf("发送群消息失败，可能是@全员次数用尽")
+					break
+				} else {
+					logger.WithField("content", msgstringer.MsgToString(msg.Elements)).
+						WithField("retry_limit", retryLimit).
+						WithField("retry_count", retry).
+						WithFields(localutils.GroupLogFields(groupCode)).
+						Errorf("发送群消息失败，可能是被禁言或者账号被风控")
+					if retry < retryLimit {
+						retry += 1
+						time.Sleep(500 * time.Millisecond)
+						continue
+					}
+					return resp
+				}
+			}
+
+			return resp
 		}
+
+		return resp
 	}
+
+	res = sendGroupMessageRetry(groupCode, msg, 3)
 	if res == nil {
 		res = &message.GroupMessage{Id: -1, Elements: msg.Elements}
 	}

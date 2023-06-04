@@ -5,8 +5,6 @@
 /.coverage.out
 /coverage.html
 
-.DS_Store
-
 *.DS_Store
 
 application.yaml
@@ -18,6 +16,8 @@ Sora233-MiraiGo
 
 /tarot
 
+DDBOT
+
 /qrcode.png
 /qq-logs
 /session.token
@@ -26,4 +26,3 @@ Sora233-MiraiGo
 /template
 
 /version*.json
-
